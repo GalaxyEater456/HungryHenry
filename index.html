@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hungry Henry</title>
+    <style>
+        :root{--bg:#0f1724;--panel:#0b1220;--accent:#ffd24d}
+        html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+        body{background:linear-gradient(180deg,#071127 0%, #0f2a43 100%);display:flex;align-items:center;justify-content:center}
+        canvas{display:block;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);box-shadow:0 8px 30px rgba(2,6,23,0.6);border-radius:12px}
+        .ui {
+            position:absolute;top:18px;left:18px;color:#e6eef8;font-weight:600;letter-spacing:0.6px;text-shadow:0 1px 0 rgba(0,0,0,0.6)
+        }
+        .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+        .menu{background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);padding:36px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);text-align:center;color:#fff}
+        .menu h1{margin:0 0 8px;font-size:28px}
+        .menu button{display:block;margin:10px auto;padding:10px 22px;border-radius:8px;border:none;background:var(--accent);color:#0b1220;font-weight:700;cursor:pointer}
+        .menu .secondary{background:transparent;border:1px solid rgba(255,255,255,0.08);color:#fff}
+        .status{position:fixed;right:18px;top:18px;color:#fff}
+        .victory{display:none;flex-direction:column;align-items:center;gap:8px}
+        .victory-text{font-size:96px;font-weight:900;color:yellow;padding:10px 20px}
+        /* chroma outline using multi-layer text-shadow */
+        .chroma{text-shadow:
+            0 0 2px #ff004f, 0 0 6px #ff004f,
+            0 0 2px #ff7700, 0 0 6px #ff7700,
+            0 0 2px #fffd00, 0 0 6px #fffd00,
+            0 0 2px #00ff6a, 0 0 6px #00ff6a,
+            0 0 2px #00c8ff, 0 0 6px #00c8ff,
+            0 0 2px #7a00ff, 0 0 6px #7a00ff}
+
+        .hint{font-size:12px;color:#9fb3d8;margin-top:6px}
+        .pause-banner{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+            background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);
+            color:#fff;font-size:28px;font-weight:700;padding:18px 40px;
+            border-radius:12px;border:1px solid rgba(255,255,255,0.08);
+            pointer-events:none;display:none}
+        /* small responsive */
+        @media (max-width:600px){.victory-text{font-size:48px}}
+
+        /* touch controls */
+        #touchControls{display:none;position:fixed;bottom:20px;left:0;right:0;justify-content:space-between;padding:0 20px;pointer-events:none}
+        #touchControls button{pointer-events:all;width:80px;height:80px;font-size:32px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.12);color:#fff;cursor:pointer;user-select:none;-webkit-user-select:none}
+        @media (hover:none) and (pointer:coarse){#touchControls{display:flex}}
+    </style>
+</head>
+<body>
+    <div class="ui" id="uiTop"></div>
+    <div class="status" id="status"></div>
+    <canvas id="game" width="900" height="600"></canvas>
+    <div class="pause-banner" id="pauseBanner">⏸ PAUSED — press P to resume</div>
+
+    <!-- Touch left/right buttons (shown on touch devices) -->
+    <div id="touchControls">
+        <button id="btnLeft">◀</button>
+        <button id="btnRight">▶</button>
+    </div>
+
+    <div class="overlay" id="menuOverlay">
+        <div class="menu">
+            <h1>Hungry Henry</h1>
+            <p style="opacity:0.85;margin:0 0 12px">Catch the falling food! Move with <strong>A / D</strong> or arrow keys.</p>
+            <button id="startBtn">Start</button>
+            <button id="settingsBtn" class="secondary">Settings</button>
+            <div class="hint">3 lives • 1 point per food • Goal: 255 points</div>
+            <div class="hint" id="hiscoreHint"></div>
+        </div>
+    </div>
+
+    <!-- Settings overlay -->
+    <div class="overlay" id="settingsOverlay" style="display:none">
+        <div class="menu" style="min-width:280px">
+            <h1>⚙️ Settings</h1>
+            <label style="display:flex;align-items:center;gap:10px;margin:12px 0;cursor:pointer">
+                <input type="checkbox" id="chkMultiFood" checked style="width:18px;height:18px;cursor:pointer"/>
+                <span>Multiple foods at higher scores</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;margin:12px 0;cursor:pointer">
+                <input type="checkbox" id="chkStars" checked style="width:18px;height:18px;cursor:pointer"/>
+                <span>Animated background stars</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;margin:12px 0">
+                <span style="white-space:nowrap">Player speed</span>
+                <input type="range" id="rngSpeed" min="3" max="12" value="6" style="flex:1"/>
+                <span id="speedVal">6</span>
+            </label>
+            <button id="closeSettings">Back</button>
+            <button id="resetHiscore" class="secondary">Reset high score</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="victoryOverlay" style="display:none">
+        <div class="menu victory">
+            <div class="victory-text chroma" id="victoryText">VICTORY!</div>
+            <div style="color:#111;background:linear-gradient(90deg,#ffd24d,#fff9c4);padding:8px 14px;border-radius:8px;font-weight:700">You reached 255 points! 🎉</div>
+            <div id="victoryHiscore" style="color:#ffd24d;font-weight:600;margin-top:4px"></div>
+            <button id="restartBtn">Play again</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="gameoverOverlay" style="display:none">
+        <div class="menu victory">
+            <div class="victory-text" id="gameoverText" style="color:#ff4d4d">GAME OVER</div>
+            <div style="color:#fff;background:linear-gradient(90deg,#ff8a8a,#ff4d4d);padding:8px 14px;border-radius:8px;font-weight:700">You lost all lives</div>
+            <div id="gameoverScore" style="color:#ffd24d;font-weight:600;margin-top:4px"></div>
+            <button id="restartBtnGameover">Play again</button>
+        </div>
+    </div>
+
+    <script>
+        // ── Canvas setup ─────────────────────────────────────────────────────
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W = canvas.width, H = canvas.height;
+
+        // ── Settings ─────────────────────────────────────────────────────────
+        const settings = {
+            multiFoods: true,
+            stars: true,
+            playerSpeed: 6
+        };
+
+        // ── High score (localStorage) ─────────────────────────────────────────
+        function getHiscore(){ return parseInt(localStorage.getItem('hhHiscore') || '0', 10); }
+        function setHiscore(s){ localStorage.setItem('hhHiscore', String(s)); }
+        function updateHiscoreHint(){
+            const h = getHiscore();
+            document.getElementById('hiscoreHint').textContent = h > 0 ? `🏆 Best score: ${h}` : '';
+        }
+        updateHiscoreHint();
+
+        // ── Game state ───────────────────────────────────────────────────────
+        let state = 'menu'; // menu | playing | paused | victory | gameover
+        let lives = 3;
+        let score = 0;
+        let lastScore = -1;   // track changes so DOM updates are minimal
+        let lastLives = -1;
+        const TARGET = 255;
+
+        // ── Henry player ─────────────────────────────────────────────────────
+        const henry = {x: W/2, y: H-80, w: 140, h: 90, speed: settings.playerSpeed, mouth:0, mouthTarget:0};
+
+        // ── Input ─────────────────────────────────────────────────────────────
+        const keys = {a:false, d:false};
+        window.addEventListener('keydown', e=>{
+            const k = e.key.toLowerCase();
+            if(k==='a' || k==='arrowleft')  keys.a = true;
+            if(k==='d' || k==='arrowright') keys.d = true;
+            if(k==='p'){
+                if(state==='playing'){ state='paused'; document.getElementById('pauseBanner').style.display='block'; }
+                else if(state==='paused'){ state='playing'; document.getElementById('pauseBanner').style.display='none'; }
+            }
+            if(k==='r' && (state==='playing' || state==='paused')){ restartGame(); }
+        });
+        window.addEventListener('keyup', e=>{
+            const k = e.key.toLowerCase();
+            if(k==='a' || k==='arrowleft')  keys.a = false;
+            if(k==='d' || k==='arrowright') keys.d = false;
+        });
+
+        // ── Touch controls ────────────────────────────────────────────────────
+        const btnLeft  = document.getElementById('btnLeft');
+        const btnRight = document.getElementById('btnRight');
+        btnLeft.addEventListener('touchstart',  e=>{ e.preventDefault(); keys.a=true;  }, {passive:false});
+        btnLeft.addEventListener('touchend',    e=>{ e.preventDefault(); keys.a=false; }, {passive:false});
+        btnRight.addEventListener('touchstart', e=>{ e.preventDefault(); keys.d=true;  }, {passive:false});
+        btnRight.addEventListener('touchend',   e=>{ e.preventDefault(); keys.d=false; }, {passive:false});
+
+        // ── Food pool ─────────────────────────────────────────────────────────
+        const foods = [];
+        const emojis = ['🍟','🍔','🍎','🍌','🍓','🌮','🍕','🥐','🍩','🍦'];
+
+        function spawnFood(){
+            // Speed scales with score but is capped to stay fair
+            const t = Math.min(score / TARGET, 1);           // 0 → 1 as score grows
+            const vy = 1.5 + t * 5.5 + Math.random() * 2;   // 1.5 → 7 + up to 2 random (max ~9 px/frame)
+            const size = Math.max(28, 48 - t * 14 + Math.random() * 14); // larger base size, shrinks slightly at high scores
+            foods.push({
+                x: Math.random()*(W-60)+30,
+                y: -40,
+                vy,
+                emoji: emojis[Math.floor(Math.random()*emojis.length)],
+                size
+            });
+        }
+
+        let spawnTimer = 0;
+
+        // ── Stars ─────────────────────────────────────────────────────────────
+        const stars = Array.from({length:40}, ()=>({
+            x: Math.random(), // stored as fraction of W/H so they survive resize
+            y: Math.random(),
+            r: Math.random()*1.2+0.4,
+            phase: Math.random()*Math.PI*2
+        }));
+
+        // ── Update ────────────────────────────────────────────────────────────
+        function update(){
+            if(state!=='playing') return;
+
+            // Movement
+            if(keys.a) henry.x -= henry.speed;
+            if(keys.d) henry.x += henry.speed;
+            henry.x = Math.max(henry.w/2, Math.min(W-henry.w/2, henry.x));
+
+            // Spawn logic
+            spawnTimer++;
+            const spawnInterval = Math.max(10, 35 - Math.floor(score / 12));
+            // At higher scores (multiFoods enabled) allow up to 3 simultaneous foods
+            const maxFoods = settings.multiFoods ? Math.min(3, 1 + Math.floor(score / 80)) : 1;
+            if(spawnTimer >= spawnInterval && foods.length < maxFoods){
+                spawnTimer = 0;
+                spawnFood();
+            }
+
+            // Update each food
+            for(let i = foods.length-1; i >= 0; i--){
+                const f = foods[i];
+                f.y += f.vy;
+
+                // Collision: any part of food overlaps any part of Henry
+                const henryLeft   = henry.x - henry.w / 2;
+                const henryRight  = henry.x + henry.w / 2;
+                const henryTop    = henry.y - henry.h / 2;
+                const henryBottom = henry.y + henry.h / 2;
+                const foodLeft    = f.x - f.size * 0.5;
+                const foodRight   = f.x + f.size * 0.5;
+                const foodTop     = f.y - f.size * 0.5;
+                const foodBottom  = f.y + f.size * 0.5;
+                if(foodRight >= henryLeft && foodLeft <= henryRight && foodBottom >= henryTop && foodTop <= henryBottom){
+                    foods.splice(i, 1);
+                    score = Math.min(TARGET, score + 1);
+                    henry.mouthTarget = 1.2;
+                    if(score >= TARGET){ endGame('victory'); }
+                    continue;
+                }
+
+                // Missed
+                if(f.y - f.size > H){
+                    foods.splice(i, 1);
+                    lives--;
+                    henry.mouthTarget = 0.6;
+                    if(lives <= 0){ endGame('gameover'); }
+                }
+            }
+
+            // Mouth animation easing
+            henry.mouth += (henry.mouthTarget - henry.mouth) * 0.15;
+            if(Math.abs(henry.mouthTarget - henry.mouth) < 0.02) henry.mouthTarget = 0;
+        }
+
+        // ── End game helper ───────────────────────────────────────────────────
+        function endGame(result){
+            // Update high score
+            if(score > getHiscore()) setHiscore(score);
+            state = result;
+            if(result === 'victory') showVictory();
+            else showGameOver();
+        }
+
+        // ── Draw ──────────────────────────────────────────────────────────────
+        function draw(ts){
+            ctx.clearRect(0, 0, W, H);
+
+            // Animated background stars
+            if(settings.stars){
+                const t = ts * 0.001;
+                for(const s of stars){
+                    const alpha = 0.04 + 0.06 * Math.sin(t + s.phase);
+                    ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+                    ctx.beginPath();
+                    ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+
+            // Draw foods
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+            for(const f of foods){
+                const r = f.size * 0.72;
+
+                // Glowing backdrop circle
+                const grd = ctx.createRadialGradient(f.x, f.y, r * 0.1, f.x, f.y, r);
+                grd.addColorStop(0, 'rgba(255,230,100,0.28)');
+                grd.addColorStop(1, 'rgba(255,180,40,0)');
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
+                ctx.fillStyle = grd;
+                ctx.fill();
+
+                // Soft white ring outline
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+
+                // Emoji with strong drop-shadow for contrast
+                ctx.font = f.size + 'px serif';
+                ctx.shadowColor = 'rgba(0,0,0,0.7)';
+                ctx.shadowBlur = 14;
+                ctx.fillText(f.emoji, f.x, f.y);
+                ctx.shadowBlur = 0;
+            }
+
+            // Draw Henry
+            const hx = henry.x, hy = henry.y;
+            ctx.save();
+            ctx.translate(hx, hy);
+
+            // Drop shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.25)';
+            ctx.beginPath();
+            ctx.ellipse(0, henry.h*0.45, henry.w*0.55, 18, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // Head / face (simple stylized, no copyrighted sprite)
+            ctx.fillStyle = '#f2e6d6';
+            roundRect(ctx, -henry.w/2, -henry.h/2, henry.w, henry.h, 18);
+            ctx.fill();
+
+            // Eyes
+            ctx.fillStyle = '#222';
+            ctx.beginPath(); ctx.ellipse(-28, -8, 8, 10, 0, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse( 28, -8, 8, 10, 0, 0, Math.PI*2); ctx.fill();
+
+            // Mouth — opens when catching food
+            const mouthH = 10 + henry.mouth * 18;
+            ctx.fillStyle = '#8b1f1f';
+            roundRect(ctx, -40, 8, 80, mouthH, 10);
+            ctx.fill();
+
+            // Teeth hint
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(-18, 8, 10, 3);
+            ctx.fillRect(  8, 8, 10, 3);
+
+            ctx.restore();
+
+            // ── UI (only update DOM when values change) ───────────────────────
+            if(score !== lastScore){
+                lastScore = score;
+                document.getElementById('uiTop').textContent = `Score: ${score} / ${TARGET}`;
+            }
+            if(lives !== lastLives){
+                lastLives = lives;
+                document.getElementById('status').innerHTML = 'Lives: ' + '❤️'.repeat(Math.max(0, lives));
+            }
+        }
+
+        // ── Main loop ─────────────────────────────────────────────────────────
+        function loop(ts){ update(); draw(ts); requestAnimationFrame(loop); }
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+        function roundRect(ctx, x, y, w, h, r){
+            ctx.beginPath();
+            ctx.moveTo(x+r, y);
+            ctx.arcTo(x+w, y,   x+w, y+h, r);
+            ctx.arcTo(x+w, y+h, x,   y+h, r);
+            ctx.arcTo(x,   y+h, x,   y,   r);
+            ctx.arcTo(x,   y,   x+w, y,   r);
+            ctx.closePath();
+        }
+
+        // ── Overlay helpers ───────────────────────────────────────────────────
+        function hideAllOverlays(){
+            document.getElementById('menuOverlay').style.display    = 'none';
+            document.getElementById('victoryOverlay').style.display = 'none';
+            document.getElementById('gameoverOverlay').style.display= 'none';
+            document.getElementById('settingsOverlay').style.display= 'none';
+            document.getElementById('pauseBanner').style.display    = 'none';
+        }
+
+        function showVictory(){
+            hideAllOverlays();
+            const h = getHiscore();
+            document.getElementById('victoryHiscore').textContent = `🏆 High score: ${h}`;
+            document.getElementById('victoryOverlay').style.display = 'flex';
+        }
+
+        function showGameOver(){
+            hideAllOverlays();
+            document.getElementById('gameoverScore').textContent = `Score: ${score}  |  🏆 Best: ${getHiscore()}`;
+            document.getElementById('gameoverOverlay').style.display = 'flex';
+        }
+
+        function showMenu(){
+            hideAllOverlays();
+            updateHiscoreHint();
+            document.getElementById('menuOverlay').style.display = 'flex';
+            state = 'menu';
+        }
+
+        function restartGame(){
+            hideAllOverlays();
+            lives = 3; score = 0; lastScore = -1; lastLives = -1;
+            foods.length = 0; spawnTimer = 0;
+            henry.x = W / 2;
+            state = 'playing';
+        }
+
+        // ── Buttons ───────────────────────────────────────────────────────────
+        document.getElementById('startBtn').addEventListener('click', restartGame);
+
+        document.getElementById('settingsBtn').addEventListener('click', ()=>{
+            document.getElementById('menuOverlay').style.display = 'none';
+            document.getElementById('settingsOverlay').style.display = 'flex';
+        });
+
+        document.getElementById('closeSettings').addEventListener('click', ()=>{
+            document.getElementById('settingsOverlay').style.display = 'none';
+            document.getElementById('menuOverlay').style.display = 'flex';
+        });
+
+        document.getElementById('resetHiscore').addEventListener('click', ()=>{
+            localStorage.removeItem('hhHiscore');
+            updateHiscoreHint();
+            document.getElementById('resetHiscore').textContent = 'Cleared ✓';
+            setTimeout(()=>{ document.getElementById('resetHiscore').textContent = 'Reset high score'; }, 1500);
+        });
+
+        // Settings: multi-food toggle
+        const chkMulti = document.getElementById('chkMultiFood');
+        chkMulti.addEventListener('change', ()=>{ settings.multiFoods = chkMulti.checked; });
+
+        // Settings: stars toggle
+        const chkStars = document.getElementById('chkStars');
+        chkStars.addEventListener('change', ()=>{ settings.stars = chkStars.checked; });
+
+        // Settings: player speed slider
+        const rngSpeed = document.getElementById('rngSpeed');
+        const speedVal = document.getElementById('speedVal');
+        rngSpeed.addEventListener('input', ()=>{
+            settings.playerSpeed = parseInt(rngSpeed.value, 10);
+            speedVal.textContent  = rngSpeed.value;
+            henry.speed           = settings.playerSpeed;
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', restartGame);
+        document.getElementById('restartBtnGameover').addEventListener('click', restartGame);
+
+        // ── Resize canvas ─────────────────────────────────────────────────────
+        function resize(){
+            const maxW = Math.min(window.innerWidth-40, 1100);
+            const maxH = Math.min(window.innerHeight-80, 700);
+            canvas.width  = Math.max(480, Math.round(maxW));
+            canvas.height = Math.max(320, Math.round(maxH));
+            W = canvas.width;
+            H = canvas.height;
+            henry.y = H - 80;
+            // Keep Henry centred / within bounds after resize
+            henry.x = Math.max(henry.w/2, Math.min(W - henry.w/2, henry.x));
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // ── Start ─────────────────────────────────────────────────────────────
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
